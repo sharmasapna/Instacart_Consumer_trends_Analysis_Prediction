@@ -1,4 +1,4 @@
-## Instacart_Consumer_trends_Analysis_Prediction
+## Instacart_Consumer_Trend_Analysis_Prediction
 
 The data was collected from [kaggle](https://www.kaggle.com/c/instacart-market-basket-analysis) consists of metadata for over 3 million Instacart orders from more than 200,000 users distributed over five tables which are department, aisle, product, prior_orders, transactions. <br>
 Using exploratory data analysis we aim to observe consumer buying patterns on department, aisles and products level; effect of day of week and hour of day on number of orders; best selling products throughout orders ; reordering proportions and patterns to know products getting reordered and interval of reorders; number of times each product getting reordered; average number of products getting added to shopping cart. In addition, we seek to identify item sets which are usually bought together and generate association rules based on different parameters such as support, threshold and lift. 
