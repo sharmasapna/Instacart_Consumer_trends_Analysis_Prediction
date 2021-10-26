@@ -1,0 +1,327 @@
+---
+title: "Next product in the basket prediction"
+author: "Sapna"
+date: "2/18/2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r insta_library}
+library(plyr)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(arules)
+library(arulesViz)
+library(colorspace)
+```
+**Project**
+```{r insta_importing_files}
+# Reading files
+aisles <- 
+  readr::read_csv("/Users/sapnasharma/Documents/MSDS_Subjects/IDMP/IDMP_Project/IDMP_Project_Data/aisles.csv")
+departments <- 
+  readr::read_csv("/Users/sapnasharma/Documents/MSDS_Subjects/IDMP/IDMP_Project/IDMP_Project_Data//departments.csv")
+order_products_prior <- 
+  readr::read_csv("/Users/sapnasharma/Documents/MSDS_Subjects/IDMP/IDMP_Project/IDMP_Project_Data//order_products__prior.csv")
+order_products_train <- 
+  readr::read_csv("/Users/sapnasharma/Documents/MSDS_Subjects/IDMP/IDMP_Project/IDMP_Project_Data//order_products__train.csv")
+orders <- 
+  readr::read_csv("/Users/sapnasharma/Documents/MSDS_Subjects/IDMP/IDMP_Project/IDMP_Project_Data//orders.csv")
+products <- 
+  readr::read_csv("/Users/sapnasharma/Documents/MSDS_Subjects/IDMP/IDMP_Project/IDMP_Project_Data//products.csv")
+ 
+
+```
+**Observing the data**   
+
+
+
+There are 2 CSV files, namely **order_products_train** and **order_products_prior**, that specify which products were purchased in each order.order_products_prior contains previous order products for all customers and order_products_train contains the latest order products for some customers only.
+```{r insta_checking files}
+str(order_products_train)
+str(order_products_prior)
+
+```
+
+There are 13,84,617 products in the order_products_train file and 3,24,34,489 products in the order_products_prior file. Both files have 4 feature columns:
+The ID of the order (order_id)
+The ID of the product (product_id)
+The ordering of that product in the order (add_to_cart_order)
+Whether that product was reordered (reordered).
+
+```{r insta_combining_files}
+#we combine both files to find the unique items
+order_products <- rbind(order_products_train,order_products_prior)
+#str(order_products)
+#unique customers
+order_products %>% distinct(order_id) %>% count()
+#unique products
+order_products %>% distinct(product_id) %>% count()
+```
+
+Overall, there are 33,46,083 unique orders for 49,685 unique products. 
+```{r,warning=FALSE,message=FALSE,insta_ordernumbers}
+# How many items were ordered the most
+order_products %>% group_by(order_id)  %>% count()%>% group_by(n) %>% count() %>% head(20)%>%
+  ggplot() + aes(x = reorder(n,nn),nn) + 
+  geom_col(stat = "identity",fill = "darkred") +
+    coord_flip() + 
+  labs(title = "       Number of items ordered in a Transaction ") +
+ xlab("Number of items in a Transaction") +ylab("Number of transactions")  +
+  geom_text(aes(label=n), hjust=1, color = "white")
+```
+
+We can observe in the plot above that people usually order around 5 or 6 products in an order.   
+```{r,warning=FALSE,message=FALSE, insta_popular_items}
+order_products %>% left_join(products) %>%
+  group_by(product_name) %>% count() %>% arrange(desc(n))%>% 
+  head(20) %>%ggplot() + aes(x = reorder(product_name,n),n) + geom_col(stat = "identity",fill = "darkred") + coord_flip() + labs(title = "       Most Popular items     ") +xlab("Product name") +ylab("Frequency")  +
+  geom_text(aes(label=n), hjust=1, color = "white")
+```
+
+
+
+
+Seeing the count
+```{r,warning=FALSE,message=FALSE,insta_count_of_items}
+
+print(order_products %>% left_join(products) %>%
+  group_by(product_name) %>% count() %>% arrange(desc(n))%>% 
+  head(20))
+```
+
+Top five popular item happens to be :   
+Banana	(491291),			
+Bag of Organic Bananas	(394930	),		
+Organic Strawberries	(275577	),		
+Organic Baby Spinach	(251705)			
+Organic Hass Avocado	(220877)   
+
+```{r,warning=FALSE,message=FALSE,insta_most_reordered}
+# most reordered items
+order_products %>% 
+  group_by(product_id )%>% 
+  summarise(x=sum(reordered))%>% arrange(desc(x) ) %>% 
+  left_join(products) %>% 
+  head(20) %>%ggplot() + aes(x = reorder(product_name,x),x) + geom_col(stat = "identity",fill = "darkred") + coord_flip() + labs(title = "       Most Frequently Reordered items     ") +xlab("Product name") +ylab("Frequency")  +
+  geom_text(aes(label=x), hjust=1, color = "white")
+
+```
+```{r,warning=FALSE,message=FALSE,insta_orders}
+
+str(orders)
+head(orders,20)
+```
+
+The orders.csv file has 3,421,083 orders and 7 feature columns:
+The ID of the order (order_id)
+The ID of the customer (user_id)
+Which evaluation datasets that the order is in — prior, train, or test (eval_set)
+The number of the order (order_number)
+The day of the week when that order occurred (order_dow)
+The hour of the day when that order occurred (order_hour_of_day)
+The number of days since the previous order (days_since_prior_order)
+```{r,warning=FALSE,message=FALSE, insta_day_of_week}
+
+# Day of the week
+orders_n <- orders
+orders_n$order_dow[orders_n$order_dow == 0] <- "Saturday"
+orders_n$order_dow[orders_n$order_dow == 1] <- "Sunday"
+orders_n$order_dow[orders_n$order_dow == 2] <- "Monday"
+orders_n$order_dow[orders_n$order_dow == 3] <- "Tuesday"
+orders_n$order_dow[orders_n$order_dow == 4] <- "Wednesday"
+orders_n$order_dow[orders_n$order_dow == 5] <- "Thursday"
+orders_n$order_dow[orders_n$order_dow == 6] <- "Friday"
+orders_n %>% group_by(order_dow) %>% count() %>%
+  ggplot() + aes(x = reorder(order_dow,n),n) + geom_col(stat = "identity",fill = "darkred") + coord_flip() + 
+  labs(title = "       Frequency of Orders as per the Day of the Week     ") +
+  xlab("Day of the week") +ylab("Frequency") + 
+  geom_text(aes(label=n), hjust=1, color = "white")
+```
+Clearly most orders are made on Saturday followed by Sunday.
+
+```{r,warning=FALSE,message=FALSE, insta_hour_of_day}
+
+orders %>% group_by(order_hour_of_day) %>% count() %>%
+  ggplot() + aes(x = (order_hour_of_day),n) + geom_col(stat = "identity",fill = "darkred") + coord_flip() + 
+  labs(title = "       Frequency of Orders as per the Hour of the Day     ") +
+  xlab("Day of the week") +ylab("Frequency") +
+  geom_text(aes(label=n), hjust=1, color = "white")
+```
+
+It is seen that most orders are placed between 10 am to 4pm.   
+
+```{r insta_reorder_again}
+#When do they order again?
+orders %>% group_by(days_since_prior_order) %>% count() %>%
+  ggplot() + aes(x = (days_since_prior_order),n) + geom_col(stat = "identity",fill = "darkred") + coord_flip() + 
+  labs(title = "       Frequency of ReOrders     ") +
+  xlab("Day of the Month") +ylab("Frequency") + geom_text(aes(label=n), hjust=1, color = "white")
+orders
+```
+We see that things are either reordered after a month or after 7 days.
+
+**Prediction**
+
+```{r dataviz}
+# get the shopping baskets
+order_baskets <- order_products %>% 
+  group_by(order_id) %>% count()
+#ordet_baskets
+order_baskets %>% group_by(n) %>% count %>%  
+  head(15) %>%ggplot() + aes(reorder(n,nn),nn)+geom_col(fill = "darkred")  + coord_flip() +
+  geom_text(aes(label=nn), hjust=1, color = "white")+ 
+  labs(title = "            Number of Items in a Basket") +
+  xlab("Number of Items in a Basket") +
+  ylab("Frequency") 
+```
+
+We see that mostly peoply buy 3 to 7 items in an order.   
+
+```{r insta_baskets}
+order_baskets <- order_products %>% 
+  inner_join(products, by="product_id") %>% 
+  group_by(order_id) %>%
+  summarise(basket = as.vector(list(product_name)))
+```
+```{r insta_transactions}
+
+transactions <- as(order_baskets$basket, "transactions")
+```
+We determine which items are frequent. We set the support threshold to 0.02, that means an item will be considered as frequent iff at least 2 percent of all the baskets contain it. So in our case, an item will be considered as being frequent if it is contained in more than 64,000 baskets.
+
+```{r,insta_frequent_items}
+item_frequencies <- itemFrequency(transactions, type="a")
+support <- 0.02
+freq_items <- sort(item_frequencies, decreasing = F)
+freq_items <- freq_items[freq_items>support*length(transactions)]
+
+par(mar=c(2,10,2,2)); options(scipen=5)
+barplot(freq_items, horiz=T, las=1, main="Frequent Items", cex.names=.8, xlim=c(0,500000),col = "darkred",border="darkred")
+mtext(paste("support:",support), padj = .8)
+abline(v=support*length(transactions), col="white")
+#glimpse(item_frequencies)
+
+```
+
+
+**Frequent Itemsets***
+
+Now, lets compute the frequent itemsets. We decrease the support threshold to take into account the small probability of observing a frequent itemset of at least size 2.   
+With a support threshold of 0.008 (~25k baskets), we observe frequent pairs 
+
+
+```{r,insta_frequent_itemsets}
+support <- 0.008
+itemsets <- apriori(transactions, parameter = list(target = "frequent itemsets", supp=support, minlen=2), control = list(verbose = FALSE))
+
+par(mar=c(5,18,2,2)+.1)
+sets_order_supp <- DATAFRAME(sort(itemsets, by="support", decreasing = F))
+barplot(sets_order_supp$support, names.arg=sets_order_supp$items, xlim=c(0,0.02), horiz = T, las = 2, cex.names = .8, main = "Frequent Itemsets",col="darkred",border="darkred")
+mtext(paste("support:",support), padj = .8)
+```
+ We observe that Bananas/Bag of Organic Bananas are most paired up items! Each of the eight pairs with highest support contains bananas. Nearly all of the items are either fruits or vegetables. There is just one frequent pair that contains milk or spinach. 
+
+**Association Rules**   
+We use a low support threshold and a high confidence to generate strong rules even for items that are less frequent.
+ 
+
+
+
+
+```{r,insta_rules1}
+rules1 <- apriori(transactions, parameter = list(supp = 0.00001, conf = 0.6, maxlen=3), control = list(verbose = FALSE))
+summary(quality(rules1))
+
+```
+
+
+```{r, insta_plot_rules1}
+
+plot(rules1, col=sequential_hcl(4, palette = "Reds 3"),jitter=0)
+
+
+```
+
+
+We see some rules with a large lift value ,indicating a strong association between the items. Let’s see the top 5 rules by lift.
+
+
+
+```{r,insta_rules1_lift}
+inspect(sort(rules1, by="lift")[1:5])
+```
+Its odd that we do not see any rules with bananas as expected . As we saw earlier that Bananas were present in top 8 frequest itemsets.
+Let’s see the top 5 rules by confidence.
+```{r,insta_rules1_conf}
+inspect(sort(rules1, by="confidence")[1:5])
+```
+Its odd that, again,  we do not see any rules with bananas.
+
+
+```{r, insta_graph_rules1}
+plot(head(sort(rules1 , by="lift"),10), method="graph", control=list(type="items"))
+```
+
+
+
+We will try some other sets of rules:
+Here Next, we increase the support and decrease confidence to get rules of some more frequent items but with less confidence.
+```{r, insta_rules2}
+rules2 <- apriori(transactions, parameter = list(supp = 0.001, conf = 0.4, maxlen=3), control = list(verbose = FALSE))
+plot(rules2, col=sequential_hcl(4, palette = "Reds 3"),jitter=0)
+```
+
+
+
+
+```{r, insta_rules2_lift}
+inspect(sort(rules2, by="lift")[1:5])
+
+```
+
+
+checking by confidence
+```{r, insta_rules2_conf}
+inspect(sort(rules2, by="confidence")[1:5])
+```
+
+```{r, insta_graph_rules2}
+plot(head(sort(rules2 , by="lift"),10), method="graph", control=list(type="items"))
+```
+
+
+
+
+Finally, lets further increase support and decrease confidence
+
+
+```{r , insta_rules3}
+rules3 <- apriori(transactions, parameter = list(supp = 0.005, conf = 0.1, maxlen=3), control = list(verbose = FALSE)) 
+plot(rules3, col=sequential_hcl(4, palette = "Reds 3"),jitter=0)
+```
+```{r , insta_plot_rules3_lift}
+inspect(sort(rules3, by="lift")[1:5])
+```
+```{r, insta_plot_rules3_conf}
+inspect(sort(rules3, by="confidence")[1:5])
+
+```
+
+
+```{r , insta_graph_rules3}
+#plot(head(sort(rules3 , by="lift"),10), method="graph", control=list(type="items"))
+```
+
+
+
+
+
+
+
